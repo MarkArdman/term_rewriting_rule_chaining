@@ -1,0 +1,13 @@
+[package]
+name = "super-optimiser"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+egg = { version = "0.9.5", features = ["lp"]}
+lang-c = "0.15.1"
+criterion = "0.5.1"
+
+[[bench]]
+name = "find_best"
+harness = false
