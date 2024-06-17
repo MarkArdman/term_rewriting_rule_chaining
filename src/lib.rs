@@ -17,7 +17,6 @@ define_language! {
         "return" = Return([Id; 1]),
         "continue" = Continue,
         "break" = Break,
-        "continue" = ContiuneC,
         "if" = If([Id; 3]),
         "for" = For([Id; 4]),
         "while" = While([Id; 2]),
@@ -85,7 +84,7 @@ define_language! {
 }
 
 // Transpile the C AST to a simplified language that EGG can process
-pub fn transpile(ast: TranslationUnit) -> String {
+pub fn transpile(ast: TranslationUnit) -> Vec<String> {
     // Find all FunctionDefinition nodes
     let mut statements = Vec::new();
     for node in &ast.0 {
@@ -98,11 +97,15 @@ pub fn transpile(ast: TranslationUnit) -> String {
     // Transpile each statement
     let definitions = statements.iter().map(|s| transpile::transpile(s)).collect::<Vec<String>>();
     // Join the transpiled statements
-    return format!("(definitions {})", definitions.join(" "));
+    return definitions;
 }
 
 pub fn init_rules() -> Vec<Rewrite<C, ()>> {
     return vec![
+        // Compound chained rules
+        rewrite!("Compound 1";"(= ?a (+ (- (+ ?a 2) 2) (* 1 0)))" => "(ignore)"),
+        rewrite!("Compound 2";"(= ?a (+ (+ (- (+ ?a 2) 2) (* 1 0)) 1))" => "(++ a)"),
+        
         // Arithmetic rules
         rewrite!("Commutative addition"; "(+ ?a ?b)"=>"(+ ?b ?a)"),
         rewrite!("Commutative multiplication";"(* ?a ?b)"=>"(* ?b ?a)"),
@@ -117,8 +120,8 @@ pub fn init_rules() -> Vec<Rewrite<C, ()>> {
         rewrite!("Difference of 2 to 0";"(- ?a ?a)"=>"0"),
         rewrite!("Difference of 0 to self";"(- 0 ?a)"=>"(- ?a)"),
         rewrite!("Difference of self to 0";"(- ?a 0)"=>"?a"),
-        rewrite!("Add and substract the same";"(- (+ ?a ?b) ?b)"=>"?a"),
-        rewrite!("Substract and add the same";"(+ (- ?a ?b) ?b)"=>"?a"),
+        rewrite!("Add and subtract the same";"(- (+ ?a ?b) ?b)"=>"?a"),
+        rewrite!("Subtract and add the same";"(+ (- ?a ?b) ?b)"=>"?a"),
         rewrite!("Multiply and divide the same";"(/ (* ?a ?b) ?b)"=>"?a"),
         rewrite!("Divide and multiply the same";"(* (/ ?a ?b) ?b)"=>"?a"),
 
@@ -221,9 +224,6 @@ pub fn init_rules() -> Vec<Rewrite<C, ()>> {
         rewrite!("Inequality of self";"(!= ?a ?a)"=>"0"),
         // Dereference
         rewrite!("Dereference of address of";"(* (& ?a))"=>"?a"),
-        
-
-        // Compound chained rules
     ];
 }
 

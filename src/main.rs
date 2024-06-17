@@ -1,65 +1,131 @@
 extern crate lang_c;
 
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
-use egg::{LpExtractor, RecExpr, Runner, TreeExplanation};
+use egg::{AstSize, Extractor, LpExtractor, RecExpr, Runner, TreeExplanation, TreeTerm};
 use lang_c::driver::{parse, Config};
 use super_optimiser::{init_rules, transpile, CCostFunction, C};
 
-fn find_consecutive_rule_sequences(
-    explanation: &TreeExplanation<C>,
-) -> Vec<Vec<String>> {
-    let mut results = Vec::new();
-    find_sequences_recursive(explanation, &mut Vec::new(), &mut results);
-    results
-}
+fn extract_rules_from_explanation(root: &TreeExplanation<C>) -> String {
+    let mut rules: Vec<Vec<&TreeExplanation<C>>> = Vec::new();
 
-fn find_sequences_recursive(
-    explanation: &TreeExplanation<C>,
-    current_sequence: &mut Vec<String>,
-    results: &mut Vec<Vec<String>>,
-) {
-    for term in explanation {
-        if let Some(ref rule) = term.forward_rule {
-            current_sequence.push(rule.clone().to_string());
-            // Continue deeper with the current sequence
-            for child_proof in &term.child_proofs {
-                find_sequences_recursive(child_proof, current_sequence, results);
-            }
-            // Record the current sequence if it ends here
-            if term.child_proofs.is_empty() {
-                results.push(current_sequence.clone());
-            }
-            current_sequence.pop();
+    if root.len() < 2 {
+        return "No rules used".to_string();
+    }
+
+    for term in root.iter() {
+        if rules.is_empty() {
+            rules = term.child_proofs.iter().map(|x| vec![x]).collect();
         } else {
-            // Start new sequences from child proofs
-            for child_proof in &term.child_proofs {
-                find_sequences_recursive(child_proof, &mut Vec::new(), results);
-            }
+            let mut temp = Vec::new();
+            rules.iter().zip(term.child_proofs.iter()).for_each(|(x, y)| {
+                // Add the current rule to the end of the current rule chain
+                let mut new_chain = x.clone();
+                new_chain.push(y);
+                temp.push(new_chain);
+            });
+            rules = temp.clone();
         }
     }
+    
+    let temp = rules.iter().map(|x: &Vec<&Vec<std::rc::Rc<TreeTerm<C>>>>| {
+        let mapped = x.iter().map(|y| format!("{:?}", {
+            term_to_string(y)
+        })).collect::<Vec<String>>();
+        // Filter out strings where all the terms are the same
+        if mapped.iter().all(|x| x == &mapped[0]) {
+            return "".to_string();
+        }
+        return mapped.join(" -> ");
+    }).collect::<Vec<String>>().iter().filter(|x| x != &"").map(|x| x.to_string()).collect::<Vec<String>>().join("\n");
+    temp
+}
+
+fn term_to_string(term: &TreeExplanation<C>) -> String {
+    let mut expr = format!("({}", term.last().unwrap().node);
+    for child in &term.last().unwrap().child_proofs {
+        expr = format!("{} {}", expr, term_to_string(child));
+    }
+    expr = format!("{})", expr);
+    expr
+}
+
+fn optimise_function(rules: &Vec<egg::Rewrite<C, ()>>, function: RecExpr<C>, nanos: u64, explanation: bool) -> (usize, RecExpr<C>) {
+    let mut optimiser: Runner<C, ()> = Runner::default().with_iter_limit(1000)
+            .with_node_limit(10000)
+            .with_time_limit(Duration::from_nanos(nanos))
+            .with_explanations_enabled().with_expr(&function).run(rules);
+    let extractor = Extractor::new(&optimiser.egraph, AstSize);
+
+    let best_expr = extractor.find_best(optimiser.roots[0]);
+
+    let mut _explanation = extract_rules_from_explanation(&optimiser.explain_equivalence(&function, &best_expr.1).explanation_trees);
+    println!("{}", _explanation);
+    best_expr
 }
 
 fn main() {
     // Initialise variables
     let args: Vec<String> = std::env::args().collect();
     let code_path = "codebases/".to_owned() + &args[1];
-    let rules = &init_rules();
+    let action = &args[2] == "rules";
+    let rules: &Vec<egg::Rewrite<C, ()>> = &init_rules();
+    let time_limit_independent_variable = 50000000;
 
     // Parse the C file to AST and transpile it to the simplified language
     let ast = parse(&Config::default(), code_path).map(|p| p.unit).map_err(|e| format!("{:?}", e)).expect("Error parsing C file");
-    let transpiled: RecExpr<C> = transpile(ast).parse().unwrap();
-    println!("{}", transpiled);
-    
-    // Initialise the EGG optimiser
-    let mut optimiser: Runner<C, ()> = Runner::default().with_time_limit(Duration::from_secs(10)).with_explanations_enabled().with_expr(&transpiled).run(rules);
-    let mut extractor = LpExtractor::new(&optimiser.egraph, CCostFunction);
-    
-    let best_expr = extractor.solve(optimiser.roots[0]);
+    let functions = transpile(ast);
+    let transpiled_functions = functions.iter().map(|f| f.parse().unwrap()).collect::<Vec<RecExpr<C>>>();
 
-    println!("{}", best_expr);
-
-    let mut _explanation = optimiser.explain_equivalence(&transpiled, &best_expr);
+    // Optimise each function and store the cost and time limit
+    let mut function_costs: HashMap<String, usize> = HashMap::new();
+    let mut function_time: HashMap<String, u64> = HashMap::new();
+    for function in transpiled_functions.iter() {
+        function_time.insert(function.to_string(), time_limit_independent_variable);
+    }
     
+    // Parallelise the optimisation of each function
+    transpiled_functions.iter().for_each(|f| {
+        let (cost, optimised_function) = optimise_function(rules, f.clone(), time_limit_independent_variable, action);
+        function_costs.insert(f.to_string(), cost);
+    });
+
+    if action {
+        return;
+    }
+
+    // Gradually shrink the time limit for each function until the cost drops below the one in function_costs
+    transpiled_functions.iter().for_each(|f| {
+        let mut time = *function_time.get(&f.to_string()).unwrap();
+        let cost = *function_costs.get(&f.to_string()).unwrap();
+        let mut updated_cost = cost;
+        println!("Function: {}", f);
+        println!("Initial Time: {:?}, Initial Cost: {:?}", time, updated_cost);
+        while updated_cost <= cost {
+            let (new_cost, _) = optimise_function(rules, f.clone(), time, false);
+            function_time.insert(f.to_string(), time);
+            updated_cost = new_cost;
+            time = ((time as f64) / 1.1) as u64;
+            if time == 0 {
+                break;
+            }
+        }
+        time = ((time as f64) * 1.2) as u64;
+        updated_cost = cost;
+        while updated_cost <= cost {
+            let (new_cost, _) = optimise_function(rules, f.clone(), time, false);
+            function_time.insert(f.to_string(), time);
+            updated_cost = new_cost;
+            time = ((time as f64) / 1.001) as u64;
+            if time == 0 {
+                break;
+            }
+        }
+        println!("Time: {:?}, Cost: {:?}", function_time.get(&f.to_string()).unwrap(), *function_costs.get(&f.to_string()).unwrap())
+    });
+
+    // Sum the lowest time limits for each function
+    let total_time: u64 = function_time.iter().map(|(_, v)| v).sum();
+    println!("Total time: {:?}", total_time);
 }
 
