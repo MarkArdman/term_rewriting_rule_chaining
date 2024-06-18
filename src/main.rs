@@ -6,11 +6,11 @@ use egg::{AstSize, Extractor, LpExtractor, RecExpr, Runner, TreeExplanation, Tre
 use lang_c::driver::{parse, Config};
 use super_optimiser::{init_rules, transpile, CCostFunction, C};
 
-fn extract_rules_from_explanation(root: &TreeExplanation<C>) -> String {
+fn extract_rules_from_explanation(root: &TreeExplanation<C>) {
     let mut rules: Vec<Vec<&TreeExplanation<C>>> = Vec::new();
 
     if root.len() < 2 {
-        return "No rules used".to_string();
+        return;
     }
 
     for term in root.iter() {
@@ -27,18 +27,39 @@ fn extract_rules_from_explanation(root: &TreeExplanation<C>) -> String {
             rules = temp.clone();
         }
     }
+
+    // rules.iter().for_each(|x: &Vec<&Vec<std::rc::Rc<TreeTerm<C>>>>| {
+    //     let mapped = x.iter().map(|y| format!("{}", {
+    //         term_to_string(y)
+    //     })).collect::<Vec<String>>();
+    //     // Filter out strings where all the terms are the same
+    //     if mapped.iter().all(|x| x == &mapped[0]) {
+    //         return;
+    //     }
+    //     // Remove the duplicates from the list
+    //     let mut seen = std::collections::HashSet::new();
+    //     let deduplicated = mapped.into_iter().filter(|y| seen.insert(y.clone())).collect::<Vec<String>>();
+
+    //     println!("{}", deduplicated.join(" -> "));
+    // });
     
-    let temp = rules.iter().map(|x: &Vec<&Vec<std::rc::Rc<TreeTerm<C>>>>| {
-        let mapped = x.iter().map(|y| format!("{:?}", {
+    let mut to_save = std::fs::read_to_string("rules.txt").unwrap_or_default();
+    rules.iter().for_each(|x: &Vec<&Vec<std::rc::Rc<TreeTerm<C>>>>| {
+        let mapped = x.iter().map(|y| format!("{}", {
             term_to_string(y)
         })).collect::<Vec<String>>();
         // Filter out strings where all the terms are the same
         if mapped.iter().all(|x| x == &mapped[0]) {
-            return "".to_string();
+            return;
         }
-        return mapped.join(" -> ");
-    }).collect::<Vec<String>>().iter().filter(|x| x != &"").map(|x| x.to_string()).collect::<Vec<String>>().join("\n");
-    temp
+        let rules = term_to_rule_chains(x.last().unwrap(), 0);
+        println!("{}\n", rules);
+        to_save.push_str(&rules);
+        to_save.push_str("\n\n");
+    });
+
+    // Append the rules to the files content
+    std::fs::write("rules.txt", to_save).expect("Unable to write file");
 }
 
 fn term_to_string(term: &TreeExplanation<C>) -> String {
@@ -50,6 +71,21 @@ fn term_to_string(term: &TreeExplanation<C>) -> String {
     expr
 }
 
+fn term_to_rule_chains(term: &TreeExplanation<C>, depth: u64) -> String {
+    let mut chain = Vec::new();
+    // Iterate through every TreeTerm except the first one
+    for child in term.iter() {
+        let mut expr = format!("({}: {:?}", depth, child.forward_rule);
+        for child in &child.child_proofs {
+            expr = format!("{} {}", expr, term_to_rule_chains(child, depth + 1));
+        }
+        expr = format!("{})", expr);
+        chain.push(expr);
+    }
+
+    chain.join(" -> ")
+}
+
 fn optimise_function(rules: &Vec<egg::Rewrite<C, ()>>, function: RecExpr<C>, nanos: u64, explanation: bool) -> (usize, RecExpr<C>) {
     let mut optimiser: Runner<C, ()> = Runner::default().with_iter_limit(1000)
             .with_node_limit(10000)
@@ -59,8 +95,7 @@ fn optimise_function(rules: &Vec<egg::Rewrite<C, ()>>, function: RecExpr<C>, nan
 
     let best_expr = extractor.find_best(optimiser.roots[0]);
 
-    let mut _explanation = extract_rules_from_explanation(&optimiser.explain_equivalence(&function, &best_expr.1).explanation_trees);
-    println!("{}", _explanation);
+    extract_rules_from_explanation(&optimiser.explain_equivalence(&function, &best_expr.1).explanation_trees);
     best_expr
 }
 
@@ -86,7 +121,7 @@ fn main() {
     
     // Parallelise the optimisation of each function
     transpiled_functions.iter().for_each(|f| {
-        let (cost, optimised_function) = optimise_function(rules, f.clone(), time_limit_independent_variable, action);
+        let (cost, _) = optimise_function(rules, f.clone(), time_limit_independent_variable, action);
         function_costs.insert(f.to_string(), cost);
     });
 

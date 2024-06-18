@@ -102,9 +102,12 @@ pub fn transpile(ast: TranslationUnit) -> Vec<String> {
 
 pub fn init_rules() -> Vec<Rewrite<C, ()>> {
     return vec![
-        // Compound chained rules
-        rewrite!("Compound 1";"(= ?a (+ (- (+ ?a 2) 2) (* 1 0)))" => "(ignore)"),
-        rewrite!("Compound 2";"(= ?a (+ (+ (- (+ ?a 2) 2) (* 1 0)) 1))" => "(++ a)"),
+        // Naive synthetic
+        // rewrite!("Compound 1";"(= ?a (+ (- (+ ?a 2) 2) (* 1 0)))" => "(ignore)"),
+        // rewrite!("Compound 2";"(= ?a (+ (+ (- (+ ?a 2) 2) (* 1 0)) 1))" => "(++ a)"),
+
+        // Common synthetic
+        //rewrite!("Compound 1";"(+ (- (+ ?a 2) 2) (* 1 0))"=>"?a"),
         
         // Arithmetic rules
         rewrite!("Commutative addition"; "(+ ?a ?b)"=>"(+ ?b ?a)"),

@@ -1,0 +1,8 @@
+(0: None (1: None) (1: None (2: None (3: None) (3: None))) (1: None)) -> (0: Some("If always true") (1: None (2: None) (2: None)))
+
+(0: None (1: None (2: None) (2: None)) (1: None (2: None) (2: None)) (1: None (2: None) (2: None (3: None) (3: None))) (1: None)) -> (0: Some("For loop with declaration and empty body"))
+
+(0: None (1: None) (1: None (2: None (3: None (4: None) (4: None)) (3: None)) (2: None (3: None) (3: None)))) -> (0: None (1: None) (1: None (2: None (3: None (4: None) (4: None)) (3: None)) (2: None (3: None) (3: None))) -> (1: None (2: None (3: None (4: None) (4: None)) (3: None)) -> (2: Some("Add and subtract the same")) (2: None (3: None) (3: None)) -> (2: Some("Annihilating element of multiplication"))) -> (1: Some("Identity element of addition"))) -> (0: Some("Assignment to self"))
+
+(0: None (1: None) (1: None (2: None (3: None (4: None (5: None) (5: None)) (4: None)) (3: None (4: None) (4: None))) (2: None))) -> (0: None (1: None) (1: None (2: None (3: None (4: None (5: None) (5: None)) (4: None)) (3: None (4: None) (4: None))) (2: None)) -> (1: None (2: None (3: None (4: None (5: None) (5: None)) (4: None)) (3: None (4: None) (4: None))) -> (2: None (3: None (4: None (5: None) (5: None)) (4: None)) -> (3: Some("Add and subtract the same")) (3: None (4: None) (4: None)) -> (3: Some("Annihilating element of multiplication"))) -> (2: Some("Identity element of addition")) (2: None))) -> (0: Some("Assignment to self plus 1") (1: None))
+
