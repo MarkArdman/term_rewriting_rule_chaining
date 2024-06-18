@@ -77,7 +77,9 @@ fn term_to_rule_chains(term: &TreeExplanation<C>, depth: u64) -> String {
     for child in term.iter() {
         let mut expr = format!("({}: {:?}", depth, child.forward_rule);
         for child in &child.child_proofs {
-            expr = format!("{} {}", expr, term_to_rule_chains(child, depth + 1));
+            if child.len() > 1 {
+                expr = format!("{} {}", expr, term_to_rule_chains(child, depth + 1));
+            }
         }
         expr = format!("{})", expr);
         chain.push(expr);
@@ -95,7 +97,9 @@ fn optimise_function(rules: &Vec<egg::Rewrite<C, ()>>, function: RecExpr<C>, nan
 
     let best_expr = extractor.find_best(optimiser.roots[0]);
 
-    extract_rules_from_explanation(&optimiser.explain_equivalence(&function, &best_expr.1).explanation_trees);
+    if explanation {
+        extract_rules_from_explanation(&optimiser.explain_equivalence(&function, &best_expr.1).explanation_trees);
+    }
     best_expr
 }
 
