@@ -26,8 +26,8 @@ fn transpile_statment(node: &Statement, binding_map: &mut HashMap<String, String
         },
         Statement::Expression(expr) => <Option<Box<Node<lang_c::ast::Expression>>> as Clone>::clone(&expr).map_or_else(|| ("(ignore)".to_string(), Vec::new()), |e| transpile_expr(&e.node, binding_map)),
         Statement::If(expr) => {
-            let cond = transpile_expr(&expr.node.condition.node, binding_map);
-            let if_clause = transpile_statment(&expr.node.then_statement.node, binding_map);
+            let cond = transpile_expr(&expr.node.condition.node, &mut binding_map.clone());
+            let if_clause = transpile_statment(&expr.node.then_statement.node, &mut binding_map.clone());
             let else_clause = match &expr.node.else_statement {
                 Some(s) => transpile_statment(&s.node, binding_map),
                 None => ("(ignore)".to_string(), Vec::new()),
@@ -47,7 +47,7 @@ fn transpile_statment(node: &Statement, binding_map: &mut HashMap<String, String
         },
         Statement::Switch(expr) => {
             let cond = transpile_expr(&expr.node.expression.node, binding_map);
-            let statement = transpile_statment(&expr.node.statement.node, binding_map);
+            let statement = transpile_statment(&expr.node.statement.node, &mut binding_map.clone());
             let expr = format!("(switch {} {})", cond.0, statement.0);
 
             let mut mutated_vars = cond.1;
@@ -197,7 +197,16 @@ fn transpile_expr(node: &Expression, binding_map: &mut HashMap<String, String>) 
             
             (expr, mutated_vars)
         },
-        Expression::Call(_) => ("(call)".to_string(), Vec::new()),
+        Expression::Call(expr) => {
+            let mut mutated_vars = Vec::new();
+            let mut arguments = Vec::new();
+            for arg in &expr.node.arguments {
+                let statement = transpile_expr(&arg.node, binding_map);
+                arguments.push(statement.0);
+                mutated_vars.extend(statement.1);
+            }
+            (format!("(call {} {})", transpile_expr(&expr.node.callee.node, binding_map).0, arguments.join(" ")), mutated_vars)
+        },
         Expression::CompoundLiteral(_) => todo!(),
         Expression::SizeOfTy(_) => ("(sizeoftype)".to_string(), Vec::new()),
         Expression::SizeOfVal(_) => ("(sizeofexpr)".to_string(), Vec::new()),

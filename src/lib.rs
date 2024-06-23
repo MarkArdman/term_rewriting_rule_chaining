@@ -1,6 +1,6 @@
 mod transpile;
 
-use egg::{define_language, rewrite, CostFunction, Id, LpCostFunction, Rewrite, Symbol};
+use egg::{define_language, rewrite, Id, LpCostFunction, Rewrite, Symbol};
 use lang_c::ast::{ExternalDeclaration, TranslationUnit};
 
 define_language! {
@@ -25,7 +25,7 @@ define_language! {
         "declaration" = Declaration([Id; 2]),
         "label" = Label([Id; 2]),
         "case" = Case([Id; 2]),
-        "call" = Call,
+        "call" = Call(Box<[Id]>),
         "sizeoftype" = SizeOfType,
         "sizeofexpr" = SizeOfExpr,
         "asm" = Asm,
@@ -103,12 +103,52 @@ pub fn transpile(ast: TranslationUnit) -> Vec<String> {
 pub fn init_rules() -> Vec<Rewrite<C, ()>> {
     return vec![
         // Naive synthetic
-        // rewrite!("Compound 1";"(= ?a (+ (- (+ ?a 2) 2) (* 1 0)))" => "(ignore)"),
-        // rewrite!("Compound 2";"(= ?a (+ (+ (- (+ ?a 2) 2) (* 1 0)) 1))" => "(++ a)"),
+        // rewrite!("Compound 1";"(= ?a (+ (- (+ ?a ?b) ?b) (* ?c 0)))" => "(ignore)"),
+        // rewrite!("Compound 2";"(+ (- (+ ?a ?b) ?b) (* ?c 0))" => "(?a)"),
 
         // Common synthetic
-        //rewrite!("Compound 1";"(+ (- (+ ?a 2) 2) (* 1 0))"=>"?a"),
-        
+        // rewrite!("Compound 1";"(+ (- (+ ?a ?b) ?b) (* ?c 0))"=>"?a"),
+
+        // Naive gzip
+        // rewrite!("Compound 1";"(= ?a (+ (+ ?a 1) 1))"=>"(+= ?a 2)"),
+        // rewrite!("Compound 2";"(+ (+ ?a 1) 1)"=>"(+ ?a 2)"),
+        // rewrite!("Compound 3";"(+ (+ (+ (+ (+ (+ (+ (+ (?a) (1)) (1)) (1)) (1)) (1)) (1)) (1)) (1)))"=>"(+ ?a (+ (+ (+ 2 2) 2) 2))"),
+        // rewrite!("Compound 4";"(= ?a (+ (+ (+ (+ (+ (+ (+ (+ (+ (?a) (1)) (1)) (1)) (1)) (1)) (1)) (1)) (1)) (1)))"=>"(+= ?a (+ (+ (+ (+ 2 1) 2) 2) 2))"),
+        // rewrite!("Compound 5";"(- (+ (+ (?a) (?b)) (?c)) (?b))"=>"(+ (?a) (?c))"),
+        // rewrite!("Compound 6";"(+ (+ (+ (+ (+ (+ ?a (1)) (1)) (1)) (1)) (1)) (1))"=>"(+ ?a (+ (+ 2 2) 2))"),
+        // rewrite!("Compound 7";"(= (?a) (+ (+ (+ (+ (?a) (1)) (1)) (1)) (1)))"=>"(+= ?a (+ 2 2))"),
+        // rewrite!("Compound 8";"(= (?a) (+ (+ (+ (?a) (1)) (1)) (1)))"=>"(+= ?a (+ 2 1))"),
+        // rewrite!("Compound 9";"(= (?a) (+ (+ (+ (+ (+ (?a) (1)) (1)) (1)) (1)) (1)))"=>"(+= ?a (+ (+ 2 1) 2))"),
+        // rewrite!("Compound 10";"(= (?a) (+ (+ (+ (+ (+ (+ (+ ?a (1)) (1)) (1)) (1)) (1)) (1)) (1)))"=>"(+= ?a (+ (+ (+ 2 1) 2) 2))"),
+        // rewrite!("Compound 11";"(&& (&& (&& (?a) (! (?b))) (! (?c))) (|| (! (?d)) (! (?e))))"=>"(&& (?a) (! (|| (?b) (|| (?c) (&& (?d) (?e))))))"),
+        // rewrite!("Compound 12";"(&& (&& (! (?a)) (! (?b))) (|| (! (?c)) (! (?d))))"=>"(! (|| (?b) (|| (?a) (&& (?c) (?d)))))"),
+        // rewrite!("Compound 13";"(&& (&& (?a) (! (?b))) (! (?c)))"=>"(&& (?a) (! (|| (?b) (?c))))"),
+        // rewrite!("Compound 14";"(&& (&& (&& (! (?a)) (?b)) (! (?c))) (! (?d)))"=>"(&& (?b) (! (|| (?c) (|| (?d) (?a)))))"),
+        // rewrite!("Compound 15";"(= ?a (+ (+ (+ (+ (+ (+ ?a (1)) (1)) (1)) (1)) (1)) (1)))"=>"(+= ?a (+ (+ 2 2) 2))"),
+        // rewrite!("Compound 16";"(+ (+ (+ (+ (?a) (1)) (1)) (1)) (1))"=>"(+ ?a (+ 2 2))"),
+        // rewrite!("Compound 17";"(&& (&& (&& (?a) (! (?b))) (! (?c))) (|| (! (?d)) (! (?a))))"=>"(&& (?a) (! (|| (?c) (|| (?b) (&& (?d) (?a))))))"),
+        // rewrite!("Compound 18";"(&& (&& (&& (! (?a)) (?b)) (! (?c))) (! (?d)))"=>"(&& (?b) (! (|| (?d) (|| (?a) (?c)))))"),
+
+        // Common gzip
+        rewrite!("Compound 2";"(+ (+ ?a 1) 1)"=>"(+ ?a 2)"),
+
+        rewrite!("Compound 1";"(= ?a (+ (+ ?a 1) 1))"=>"(+= ?a 2)"),
+
+        rewrite!("Compound 16";"(+ (+ (+ (+ (?a) (1)) (1)) (1)) (1))"=>"(+ ?a (+ 2 2))"),
+
+        rewrite!("Compound 5";"(- (+ (+ (?a) (?b)) (?c)) (?b))"=>"(+ (?a) (?c))"),
+
+        rewrite!("Compound 6";"(+ (+ (+ (+ (+ (+ ?a (1)) (1)) (1)) (1)) (1)) (1))"=>"(+ ?a (+ (+ 2 2) 2))"),
+
+        rewrite!("Compound 3";"(+ (+ (+ (+ (+ (+ (+ (+ (?a) (1)) (1)) (1)) (1)) (1)) (1)) (1)) (1)))"=>"(+ ?a (+ (+ (+ 2 2) 2) 2))"),
+        rewrite!("Compound 8";"(= (?a) (+ (+ (+ (?a) (1)) (1)) (1)))"=>"(+= ?a (+ 2 1))"),
+        rewrite!("Compound 13";"(&& (&& (?a) (! (?b))) (! (?c)))"=>"(&& (?a) (! (|| (?b) (?c))))"),
+
+        // Naive olympiad
+        // rewrite!("Compound 1";"(|| (|| (|| ?a (&& ?b ?g)) (&& (&& ?b ?c) ?d)) (&& (&& (&& ?b ?c) ?e) ?f))"=>"(|| ?a (&& ?b (|| (&& ?f (&& ?c ?e)) (|| ?g (&& ?c ?d)))))"),
+
+        // Base ruleset
+
         // Arithmetic rules
         rewrite!("Commutative addition"; "(+ ?a ?b)"=>"(+ ?b ?a)"),
         rewrite!("Commutative multiplication";"(* ?a ?b)"=>"(* ?b ?a)"),
@@ -226,13 +266,13 @@ pub fn init_rules() -> Vec<Rewrite<C, ()>> {
         rewrite!("Equality of self";"(== ?a ?a)"=>"1"),
         rewrite!("Inequality of self";"(!= ?a ?a)"=>"0"),
         // Dereference
-        rewrite!("Dereference of address of";"(* (& ?a))"=>"?a"),
+        rewrite!("Dereference of address";"(* (& ?a))"=>"?a"),
     ];
 }
 
 pub struct CCostFunction;
 impl LpCostFunction<C, ()> for CCostFunction {
-    fn node_cost(&mut self, egraph: &egg::EGraph<C, ()>, eclass: Id, enode: &C) -> f64 {
+    fn node_cost(&mut self, _: &egg::EGraph<C, ()>, _: Id, enode: &C) -> f64 {
         match enode {
             C::Ignore => 0.0,
             _ => 1.0
